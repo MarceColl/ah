@@ -1,0 +1,4 @@
+: foreach shaders/*.frag |> glslc %f -o %o |> %B_frag.spv
+: foreach shaders/*.vert |> glslc %f -o %o |> %B_vert.spv
+: foreach ah/*.c |> clang -Wall -g -O1 -Wextra -I./ -c %f -o %o |> %B.o
+: *.o |> clang %f -lglfw -lvulkan -ldl -lpthread -lX11 -lXxf86vm -lXrandr -lXi -fsanitize="address" -o %o |> atom-heart
