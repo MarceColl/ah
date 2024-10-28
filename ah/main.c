@@ -1,13 +1,16 @@
+#include <cglm/types.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
+#include <time.h>
 #include <vulkan/vulkan_core.h>
 
 #include "ah.h"
 #include "vk.h"
 #include "errors.h"
+#include "vertex.h"
 
 
 #define WIN_WIDTH 800
@@ -17,6 +20,7 @@
 // #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 // #include <glm/vec4.hpp>
 // #include <glm/mat4x4.hpp>
+
 
 void init_window(vulkan_state_t *vk_state) {
     glfwInit();

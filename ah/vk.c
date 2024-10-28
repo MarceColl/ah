@@ -10,6 +10,7 @@
 #include "ah.h"
 #include "errors.h"
 #include "helpers.h"
+#include "vertex.h"
 
 const char* validation_layers[] = {
     "VK_LAYER_KHRONOS_validation"
@@ -20,6 +21,12 @@ const char* extensions[] = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME,
 };
 const int32_t extensions_count = 1;
+
+const vertex_t vertices[3] = {
+    {{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+    {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+    {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+};
 
 void populate_queue_families(vulkan_state_t *vk_state);
 
@@ -73,6 +80,11 @@ AH_RESULT ah_vk_init(vulkan_state_t *vk_state) {
 
     if (ah_vk_create_command_pool(vk_state) != AH_SUCCESS) {
         print_error("init_vulkan/create_command_pool");
+        return AH_FAILURE;
+    }
+
+    if (ah_vk_create_vertex_buffer(vk_state) != AH_SUCCESS) {
+        print_error("init_vulkan/create_vertex_buffers");
         return AH_FAILURE;
     }
 
@@ -507,12 +519,15 @@ AH_RESULT ah_vk_create_graphics_pipeline(vulkan_state_t *vk_state) {
     dynamic_state.dynamicStateCount = 2;
     dynamic_state.pDynamicStates = dynamic_states;
 
+    VkVertexInputBindingDescription bind_desc = get_vertex_binding_description();
+    vertex_input_attribute_description_t attr_descs = get_vertex_attribute_descriptions();
+
     VkPipelineVertexInputStateCreateInfo vertex_input_info = {};
     vertex_input_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertex_input_info.vertexBindingDescriptionCount = 0;
-    vertex_input_info.pVertexBindingDescriptions = NULL;
-    vertex_input_info.vertexAttributeDescriptionCount = 0;
-    vertex_input_info.pVertexAttributeDescriptions = NULL;
+    vertex_input_info.vertexBindingDescriptionCount = 1;
+    vertex_input_info.pVertexBindingDescriptions = &bind_desc;
+    vertex_input_info.vertexAttributeDescriptionCount = attr_descs.num_attributes;
+    vertex_input_info.pVertexAttributeDescriptions = attr_descs.attr_desc;
 
     VkPipelineInputAssemblyStateCreateInfo input_assembly = {};
     input_assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -712,7 +727,11 @@ AH_RESULT ah_vk_record_command_buffer(vulkan_state_t *vk_state, VkCommandBuffer 
     scissor.extent = vk_state->swapchain_extent;
     vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
-    vkCmdDraw(command_buffer, 3, 1, index % 4, 0);
+    VkBuffer vertex_buffers[1] = {vk_state->vertex_buffer};
+    VkDeviceSize offsets[1] = {0};
+    vkCmdBindVertexBuffers(command_buffer, 0, 1, vertex_buffers, offsets);
+
+    vkCmdDraw(command_buffer, 3, 1, 0, 0);
 
     vkCmdEndRenderPass(command_buffer);
 
@@ -738,6 +757,64 @@ AH_RESULT ah_vk_create_sync_objects(vulkan_state_t *vk_state) {
        set_error("Failed to create sync objects") ;
        return AH_FAILURE;
     }
+
+    return AH_SUCCESS;
+}
+
+AH_RESULT find_memory_type(vulkan_state_t *vk_state, uint32_t type_filter, VkMemoryPropertyFlags properties, uint32_t *memory_type) {
+    VkPhysicalDeviceMemoryProperties mem_properties;
+    vkGetPhysicalDeviceMemoryProperties(vk_state->physical_device, &mem_properties);
+
+    for (uint32_t i = 0; i < mem_properties.memoryTypeCount; i++) {
+        if (type_filter & (1 << i) && (mem_properties.memoryTypes[i].propertyFlags & properties) == properties) {
+            *memory_type = i;
+            return AH_SUCCESS;
+        }
+    }
+
+    set_error("Couldn't find appropriate memory type");
+    return AH_FAILURE;
+}
+
+AH_RESULT ah_vk_create_vertex_buffer(vulkan_state_t *vk_state) {
+    VkBufferCreateInfo buffer_info = {};
+    buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    buffer_info.size = sizeof(vertices[0]) * 3;
+    buffer_info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (vkCreateBuffer(vk_state->device, &buffer_info, NULL, &vk_state->vertex_buffer) != VK_SUCCESS) {
+        set_error("Failed to create vertex buffer");
+        return AH_FAILURE;
+    }
+
+    VkMemoryRequirements mem_requirements;
+    vkGetBufferMemoryRequirements(vk_state->device, vk_state->vertex_buffer, &mem_requirements);
+
+    VkMemoryAllocateInfo alloc_info = {};
+    alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    alloc_info.allocationSize = mem_requirements.size;
+
+    if (find_memory_type(
+        vk_state,
+        mem_requirements.memoryTypeBits,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        &alloc_info.memoryTypeIndex)
+    != AH_SUCCESS) {
+        return AH_FAILURE;
+    }
+
+    if (vkAllocateMemory(vk_state->device, &alloc_info, NULL, &vk_state->vertex_buffer_memory) != VK_SUCCESS) {
+        set_error("Failed allocating memory for vertex buffer");
+        return AH_FAILURE;
+    }
+
+    vkBindBufferMemory(vk_state->device, vk_state->vertex_buffer, vk_state->vertex_buffer_memory, 0);
+
+    void *data;
+    vkMapMemory(vk_state->device, vk_state->vertex_buffer_memory, 0, buffer_info.size, 0, &data);
+    memcpy(data, vertices, (size_t)buffer_info.size);
+    vkUnmapMemory(vk_state->device, vk_state->vertex_buffer_memory);
 
     return AH_SUCCESS;
 }

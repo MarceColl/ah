@@ -39,6 +39,8 @@ typedef struct vulkan_state {
     VkPipeline pipeline;
     VkCommandPool command_pool;
     VkCommandBuffer command_buffer;
+    VkBuffer vertex_buffer;
+    VkDeviceMemory vertex_buffer_memory;
 
     VkSemaphore image_available_sempahore;
     VkSemaphore render_finished_semaphore;
@@ -62,6 +64,6 @@ AH_RESULT ah_vk_create_framebuffers(vulkan_state_t *vk_state);
 AH_RESULT ah_vk_create_command_pool(vulkan_state_t *vk_state);
 AH_RESULT ah_vk_create_command_buffer(vulkan_state_t *vk_state);
 AH_RESULT ah_vk_create_sync_objects(vulkan_state_t *vk_state);
-
+AH_RESULT ah_vk_create_vertex_buffer(vulkan_state_t *vk_state);
 
 AH_RESULT ah_vk_record_command_buffer(vulkan_state_t *vk_state, VkCommandBuffer command_buffer, uint32_t image_index, uint32_t index);
